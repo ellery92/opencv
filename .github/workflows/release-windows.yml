@@ -1,0 +1,116 @@
+name: Release Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish'
+        required: false
+        default: v5.0.0-windows
+  push:
+    tags: ['v*-windows']
+
+permissions:
+  contents: write
+
+env:
+  OPENCV_REF: 40738fb16ceddb5fb3fea747585f7ce6abb0605b
+  OPENCV_CONTRIB_REF: 755e50675d97db9b7d449d8bd6b09888646f6c6e
+
+jobs:
+  release-windows:
+    name: Build and publish OpenCV 5.0 Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - name: Resolve release tag
+        id: tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tag = $env:GITHUB_REF_NAME
+          } else {
+            $tag = '${{ github.event.inputs.tag }}'
+            if (-not $tag) { $tag = 'v5.0.0-windows' }
+          }
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.OPENCV_REF }}
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ellery92/opencv_contrib
+          ref: ${{ env.OPENCV_CONTRIB_REF }}
+          path: opencv_contrib
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Install Ninja
+        run: choco install ninja -y
+
+      - name: Cache OpenCV build tree
+        uses: actions/cache@v4
+        with:
+          path: build-opencv
+          key: opencv5-win-${{ env.OPENCV_REF }}-${{ env.OPENCV_CONTRIB_REF }}-${{ runner.os }}
+
+      - name: Configure OpenCV
+        shell: pwsh
+        run: |
+          cmake -S . -B build-opencv -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_INSTALL_PREFIX="${{ github.workspace }}/staging/opencv" `
+            -DCMAKE_CXX_STANDARD=17 `
+            -DCMAKE_CXX_STANDARD_REQUIRED=ON `
+            -DOPENCV_EXTRA_MODULES_PATH="${{ github.workspace }}/opencv_contrib/modules" `
+            -DBUILD_opencv_world=ON `
+            -DBUILD_SHARED_LIBS=ON `
+            -DBUILD_EXAMPLES=OFF `
+            -DBUILD_TESTS=OFF `
+            -DBUILD_PERF_TESTS=OFF `
+            -DBUILD_DOCS=OFF `
+            -DBUILD_opencv_apps=OFF `
+            -DWITH_OPENCL=OFF `
+            -DWITH_CUDA=OFF `
+            -DWITH_FFMPEG=OFF
+
+      - name: Build OpenCV
+        run: cmake --build build-opencv --parallel
+
+      - name: Install OpenCV
+        run: cmake --install build-opencv
+
+      - name: Add runtime note
+        shell: pwsh
+        run: |
+          @'
+          OpenCV 5.0.0 + contrib for Windows x64 (MSVC, Release).
+          Built from ellery92/opencv and ellery92/opencv_contrib at pinned 5.0.0 commits.
+          Use with ApexLib via -DOpenCV_DIR=<extracted>/x64/vc*/lib
+          '@ | Set-Content -Encoding UTF8 staging/opencv/README.txt
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path staging/opencv/* -DestinationPath opencv-5.0.0-windows-x64.zip
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: OpenCV 5.0.0 Windows x64
+          body: |
+            Prebuilt OpenCV 5.0.0 + contrib for Windows x64 (MSVC).
+
+            Extract and point CMake at `x64/vc*/lib`:
+
+            ```powershell
+            cmake -DOpenCV_DIR=<extracted>/x64/vc17/lib ..
+            ```
+          files: |
+            opencv-5.0.0-windows-x64.zip
+          make_latest: true
