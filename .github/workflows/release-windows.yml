@@ -58,12 +58,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build-opencv
-          key: opencv5-win-${{ env.OPENCV_REF }}-${{ env.OPENCV_CONTRIB_REF }}-${{ runner.os }}
+          key: opencv5-win-v2-${{ env.OPENCV_REF }}-${{ env.OPENCV_CONTRIB_REF }}-${{ runner.os }}
 
       - name: Configure OpenCV
         shell: pwsh
         run: |
-          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch 'mingw' }) -join ';'
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch 'mingw|Strawberry|ucrt64' }) -join ';'
           cmake -S . -B build-opencv -G Ninja `
             -DCMAKE_C_COMPILER=cl `
             -DCMAKE_CXX_COMPILER=cl `
@@ -86,7 +86,7 @@ jobs:
       - name: Build OpenCV
         shell: pwsh
         run: |
-          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch 'mingw' }) -join ';'
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -notmatch 'mingw|Strawberry|ucrt64' }) -join ';'
           cmake --build build-opencv --parallel
 
       - name: Install OpenCV
